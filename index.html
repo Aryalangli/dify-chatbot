@@ -36,13 +36,22 @@
       overflow-x: hidden;
     }
 
-    /* Canvas 背景 */
-    #bg-canvas {
+    /* 星空底层 */
+    #starfield {
       position: fixed;
       inset: 0;
       z-index: 0;
       width: 100%;
       height: 100%;
+    }
+    /* Canvas 粒子层 */
+    #bg-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
     }
 
     /* 主容器 */
@@ -200,7 +209,9 @@
   </style>
 </head>
 <body>
-  <!-- 动态 Canvas 背景 -->
+  <!-- 静态星空底层 -->
+  <canvas id="starfield"></canvas>
+  <!-- 动态粒子层 -->
   <canvas id="bg-canvas"></canvas>
 
   <!-- 主内容 -->
@@ -254,52 +265,75 @@
     </div>
   </div>
 
-  <!-- Canvas 动画脚本 -->
+  <!-- 星空 + 粒子脚本 -->
   <script>
     (function() {
+      // ====== 底层：静态星空 ======
+      const sf = document.getElementById('starfield');
+      const sfCtx = sf.getContext('2d');
+      let stars = [];
+
+      function drawStarfield() {
+        const w = sf.width = window.innerWidth;
+        const h = sf.height = window.innerHeight;
+
+        // 深邃黑底
+        sfCtx.fillStyle = '#050510';
+        sfCtx.fillRect(0, 0, w, h);
+
+        // 生成星星（只在首次和 resize 时）
+        stars = [];
+        const count = Math.floor(w * h / 800); // 密度适中
+        for (let i = 0; i < count; i++) {
+          const size = Math.random() * 2.2 + 0.3;
+          const brightness = Math.random();
+          // 大多白/蓝白，少量暖黄
+          const r = 180 + Math.floor(Math.random() * 75);
+          const g = 180 + Math.floor(Math.random() * 75);
+          const b = 200 + Math.floor(Math.random() * 55);
+          stars.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            r: size,
+            opacity: 0.25 + brightness * 0.75,
+            color: `rgba(${r},${g},${b},`
+          });
+        }
+
+        // 画星星
+        stars.forEach(s => {
+          // 亮星加光晕
+          if (s.r > 1.6 && s.opacity > 0.7) {
+            const glow = sfCtx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 4);
+            glow.addColorStop(0, `rgba(200,210,255,${s.opacity * 0.5})`);
+            glow.addColorStop(1, 'rgba(0,0,0,0)');
+            sfCtx.beginPath();
+            sfCtx.arc(s.x, s.y, s.r * 4, 0, Math.PI * 2);
+            sfCtx.fillStyle = glow;
+            sfCtx.fill();
+          }
+          sfCtx.beginPath();
+          sfCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          sfCtx.fillStyle = s.color + s.opacity + ')';
+          sfCtx.fill();
+        });
+      }
+
+      drawStarfield();
+      window.addEventListener('resize', drawStarfield);
+
+      // ====== 上层：动态粒子（透明底） ======
       const canvas = document.getElementById('bg-canvas');
       const ctx = canvas.getContext('2d');
       let w, h, particles = [];
-      const PARTICLE_COUNT = 80;
 
-      function resize() {
+      function resizeParticles() {
         w = canvas.width = window.innerWidth;
         h = canvas.height = window.innerHeight;
       }
-      resize();
-      window.addEventListener('resize', resize);
+      resizeParticles();
+      window.addEventListener('resize', resizeParticles);
 
-      // 星云渐变背景（静态层，画一次后保持不变）
-      function drawNebula() {
-        // 深空底色
-        ctx.fillStyle = '#0a0a1a';
-        ctx.fillRect(0, 0, w, h);
-
-        // 大块星云光晕 - 左上紫蓝
-        const g1 = ctx.createRadialGradient(w*0.25, h*0.3, 0, w*0.25, h*0.3, w*0.6);
-        g1.addColorStop(0, 'rgba(99,102,241,0.12)');
-        g1.addColorStop(0.5, 'rgba(139,92,246,0.05)');
-        g1.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g1;
-        ctx.fillRect(0, 0, w, h);
-
-        // 右下粉紫光晕
-        const g2 = ctx.createRadialGradient(w*0.7, h*0.65, 0, w*0.7, h*0.65, w*0.5);
-        g2.addColorStop(0, 'rgba(236,72,153,0.08)');
-        g2.addColorStop(0.5, 'rgba(168,85,247,0.04)');
-        g2.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g2;
-        ctx.fillRect(0, 0, w, h);
-
-        // 中间微光
-        const g3 = ctx.createRadialGradient(w*0.5, h*0.45, 0, w*0.5, h*0.45, w*0.35);
-        g3.addColorStop(0, 'rgba(129,140,248,0.06)');
-        g3.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g3;
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      // 粒子类
       class Particle {
         constructor() {
           this.reset(true);
@@ -310,15 +344,14 @@
           this.size = Math.random() * 2 + 0.5;
           this.speedY = Math.random() * 0.3 + 0.1;
           this.speedX = (Math.random() - 0.5) * 0.2;
-          this.opacity = Math.random() * 0.6 + 0.1;
+          this.opacity = Math.random() * 0.5 + 0.1;
           this.opacitySpeed = Math.random() * 0.005 + 0.002;
           this.opacityPhase = Math.random() * Math.PI * 2;
-          // 颜色在紫-粉-白之间
           const colors = [
-            [199, 210, 254], // indigo-200
-            [221, 214, 254], // violet-200
-            [245, 208, 254], // fuchsia-200
-            [224, 231, 255], // 偏白
+            [199, 210, 254],
+            [221, 214, 254],
+            [245, 208, 254],
+            [224, 231, 255],
           ];
           const c = colors[Math.floor(Math.random() * colors.length)];
           this.color = `rgba(${c[0]},${c[1]},${c[2]},`;
@@ -340,7 +373,6 @@
         }
       }
 
-      // 光线粒子 - 更大更亮
       class LightParticle {
         constructor() {
           this.reset(true);
@@ -350,7 +382,7 @@
           this.y = init ? Math.random() * h : h + 10;
           this.size = Math.random() * 3 + 1.5;
           this.speedY = Math.random() * 0.15 + 0.05;
-          this.opacity = Math.random() * 0.3 + 0.05;
+          this.opacity = Math.random() * 0.25 + 0.04;
           this.opacitySpeed = Math.random() * 0.003 + 0.001;
           this.opacityPhase = Math.random() * Math.PI * 2;
         }
@@ -372,37 +404,16 @@
         }
       }
 
-      // 创建粒子
-      for (let i = 0; i < PARTICLE_COUNT; i++) {
-        particles.push(new Particle());
-      }
-      for (let i = 0; i < 25; i++) {
-        particles.push(new LightParticle());
-      }
+      for (let i = 0; i < 80; i++) particles.push(new Particle());
+      for (let i = 0; i < 25; i++) particles.push(new LightParticle());
 
-      // 画星云（只在 resize 时重画）
-      drawNebula();
-      window.addEventListener('resize', () => {
-        resize();
-        drawNebula();
-      });
-
-      // 动画循环
       function animate() {
-        // 半透明覆盖制造拖尾效果，同时保持星云
-        ctx.fillStyle = 'rgba(10,10,26,0.15)';
-        ctx.fillRect(0, 0, w, h);
-
+        // 透明层，只清粒子
+        ctx.clearRect(0, 0, w, h);
         particles.forEach(p => {
           p.update();
           p.draw(ctx);
         });
-
-        // 偶尔重绘星云补充亮度
-        if (Math.random() < 0.02) {
-          drawNebula();
-        }
-
         requestAnimationFrame(animate);
       }
       animate();
